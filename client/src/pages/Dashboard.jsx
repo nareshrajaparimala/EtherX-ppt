@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { usePresentation } from '../contexts/PresentationContext';
@@ -8,31 +8,38 @@ import Sidebar from '../components/Sidebar';
 import SlideEditor from '../components/SlideEditor';
 import SpeakerNotes from '../components/SpeakerNotes';
 import LayoutSelector from '../components/LayoutSelector';
-import FormatPanel from '../components/FormatPanel';
-import DrawingTools from '../components/DrawingTools';
-import EnhancedChartComponent from '../components/EnhancedChartComponent';
-import AddInsPanel from '../components/AddInsPanel';
+// import FormatPanel removed
+// import DrawingTools removed
+// import EnhancedChartComponent removed
+// import AddInsPanel removed
 import AnimationPanel from '../components/AnimationPanel';
 import PresenterMode from '../components/PresenterMode';
 import SlideShow from '../components/SlideShow';
 import KeyboardShortcuts from '../components/KeyboardShortcuts';
 import PresentationManager from '../components/PresentationManager';
+import DropdownMenu, { DropdownItem, DropdownSeparator } from '../components/DropdownMenu';
 import TemplateLibrary from '../components/TemplateLibrary';
 import RecentPresentations from '../components/RecentPresentations';
 import SearchPresentations from '../components/SearchPresentations';
 import AIAssistant from '../components/AIAssistant';
+import HeaderFooterModal from '../components/HeaderFooterModal';
+import ChartComponent from '../components/ChartComponent';
+import TableComponent from '../components/TableComponent';
+import ThemePresetPicker from '../components/ThemePresetPicker';
 import CloudSync from '../components/CloudSync';
 import AdvancedExport from '../components/AdvancedExport';
 import InteractiveElements from '../components/InteractiveElements';
 import MobileView from '../components/MobileView';
 import VersionHistory from '../components/VersionHistory';
+import { exportToJSON } from '../utils/exportUtils';
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { isDark, toggleTheme } = useTheme();
-  const { slides, currentSlide } = usePresentation();
+  const { slides, currentSlide, setSlides, presentationMeta, setPresentationMeta, updateSlide } = usePresentation();
   const [activePanel, setActivePanel] = useState(null);
+  const [authFlow, setAuthFlow] = useState(localStorage.getItem('authFlow') || 'login');
   const [isSlideshow, setIsSlideshow] = useState(false);
   const [showFileMenu, setShowFileMenu] = useState(false);
   const [showPresentationManager, setShowPresentationManager] = useState(false);
@@ -40,13 +47,24 @@ const Dashboard = () => {
   const [showRecentPresentations, setShowRecentPresentations] = useState(false);
   const [showSearchPresentations, setShowSearchPresentations] = useState(false);
   const [showPresenterMode, setShowPresenterMode] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [showInsertChart, setShowInsertChart] = useState(false);
+  const [showInsertTable, setShowInsertTable] = useState(false);
+  const [showHeaderFooter, setShowHeaderFooter] = useState(false);
+  const [showThemePicker, setShowThemePicker] = useState(false);
   const [showAIAssistant, setShowAIAssistant] = useState(false);
   const [showCloudSync, setShowCloudSync] = useState(false);
   const [showAdvancedExport, setShowAdvancedExport] = useState(false);
   const [showInteractiveElements, setShowInteractiveElements] = useState(false);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [showFavourites, setShowFavourites] = useState(false);
+
+  const location = useLocation();
 
   useEffect(() => {
+    // Load persisted authFlow when component mounts
+    setAuthFlow(localStorage.getItem('authFlow') || 'login');
+
     const handleStartSlideshow = () => setIsSlideshow(true);
     const handleExitSlideshow = () => setIsSlideshow(false);
 
@@ -59,18 +77,23 @@ const Dashboard = () => {
     };
   }, []);
 
+  // Handle deep-links from landing: favourites/history
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const view = params.get('view');
+    if (view === 'history') {
+      if (user) setShowRecentPresentations(true);
+    }
+    if (view === 'favourites') {
+      if (user) setShowFavourites(true);
+    }
+  }, [location.search, user]);
+
   const renderRightPanel = () => {
     switch (activePanel) {
       case 'layout':
         return <LayoutSelector />;
-      case 'format':
-        return <FormatPanel />;
-      case 'draw':
-        return <DrawingTools />;
-      case 'charts':
-        return <EnhancedChartComponent />;
-      case 'addins':
-        return <AddInsPanel />;
+      // Removed format, draw, charts, add-ins per simplification
       case 'animations':
         return <AnimationPanel />;
       default:
@@ -88,11 +111,7 @@ const Dashboard = () => {
           <div className="flex items-center space-x-8">
             {/* Logo and Brand */}
             <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
+              <img src="/DOCS-LOGO-final-transparent.png" alt="EtherX Logo" className="w-8 h-8" />
               <span className="text-xl font-bold bg-gradient-to-r from-neutral-800 to-neutral-600 dark:from-neutral-200 dark:to-neutral-400 bg-clip-text text-transparent">
                 EtherXPPT
               </span>
@@ -100,66 +119,80 @@ const Dashboard = () => {
             
             {/* Navigation Menu */}
             <nav className="flex items-center space-x-1">
-              <div className="relative">
-                <button 
-                  onClick={() => setShowFileMenu(!showFileMenu)}
-                  className="px-3 py-2 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-all duration-200"
-                >
-                  File
-                </button>
-                {showFileMenu && (
-                  <div className="dropdown-menu">
-                    <button
-                      onClick={() => {
-                        setShowPresentationManager(true);
-                        setShowFileMenu(false);
-                      }}
-                      className="dropdown-item"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
-                      </svg>
-                      Manage Presentations
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowTemplateLibrary(true);
-                        setShowFileMenu(false);
-                      }}
-                      className="dropdown-item"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
-                      </svg>
-                      Template Library
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowRecentPresentations(true);
-                        setShowFileMenu(false);
-                      }}
-                      className="dropdown-item"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Recent Presentations
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowSearchPresentations(true);
-                        setShowFileMenu(false);
-                      }}
-                      className="dropdown-item"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                      Search Presentations
-                    </button>
+              <DropdownMenu label="File" align="left">
+                <DropdownItem onSelect={() => {
+                  if (confirm('Start a new presentation? Unsaved changes will be lost.')) {
+                    const firstSlide = [{ id: Date.now(), title: 'Slide 1', content: 'Click to add content', background: '#ffffff', textColor: '#000000', layout: 'title-content', elements: [] }];
+                    setSlides(firstSlide);
+                    setPresentationMeta({ ...presentationMeta, updatedAt: new Date().toISOString(), title: presentationMeta.title || 'Untitled' });
+                  }
+                }}>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                    New
                   </div>
-                )}
-              </div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => setShowInfoModal(true)}>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 20a8 8 0 100-16 8 8 0 000 16z" /></svg>
+                    Information
+                  </div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => {
+                  const name = prompt('Save As filename (without extension):', presentationMeta.title || 'presentation')?.trim();
+                  if (name) {
+                    exportToJSON(slides, `${name}.json`);
+                    setPresentationMeta({ ...presentationMeta, title: name, updatedAt: new Date().toISOString() });
+                  }
+                }}>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                    Save As
+                  </div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => {
+                  if (confirm('Close presentation and return to Home?')) {
+                    navigate('/');
+                  }
+                }}>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    Close
+                  </div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => setShowPresentationManager(true)}>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
+                    </svg>
+                    Manage Presentations
+                  </div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => setShowTemplateLibrary(true)}>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5z" />
+                    </svg>
+                    Template Library
+                  </div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => setShowRecentPresentations(true)}>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Recent Presentations
+                  </div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => setShowSearchPresentations(true)}>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    Search Presentations
+                  </div>
+                </DropdownItem>
+              </DropdownMenu>
               
               <button 
                 onClick={() => navigate('/')}
@@ -168,13 +201,103 @@ const Dashboard = () => {
                 Home
               </button>
               
-              <button className="px-3 py-2 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-all duration-200">
-                Insert
-              </button>
+              <DropdownMenu label="Insert" align="left">
+                <DropdownItem onSelect={() => {
+                  const el = { id: Date.now(), type: 'textbox', content: 'New text', x: 100, y: 100, width: 240, height: 60, fontSize: 18, fontFamily: 'Arial', color: '#000', backgroundColor: 'transparent' };
+                  const elems = slides[currentSlide]?.elements || [];
+                  updateSlide(currentSlide, { elements: [...elems, el] });
+                }}>
+                  <div className="flex items-center gap-2">🅣 Text Box</div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => {
+                  const url = prompt('Image URL:');
+                  if (url) {
+                    const el = { id: Date.now(), type: 'image', src: url, x: 120, y: 140, width: 300, height: 200, alt: 'Image' };
+                    const elems = slides[currentSlide]?.elements || [];
+                    updateSlide(currentSlide, { elements: [...elems, el] });
+                  }
+                }}>
+                  <div className="flex items-center gap-2">🖼️ Image (URL)</div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => setShowInsertChart(true)}>
+                  <div className="flex items-center gap-2">📊 Chart</div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => setShowInsertTable(true)}>
+                  <div className="flex items-center gap-2">📋 Table</div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => {
+                  const el = { id: Date.now(), type: 'icon', content: '⭐', x: 260, y: 200, width: 48, height: 48, fontSize: 32 };
+                  const elems = slides[currentSlide]?.elements || [];
+                  updateSlide(currentSlide, { elements: [...elems, el] });
+                }}>
+                  <div className="flex items-center gap-2">🔣 Icon</div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => {
+                  const el = { id: Date.now(), type: 'textbox', content: '<i>E = mc^2</i>', x: 180, y: 220, width: 180, height: 50, fontSize: 20, fontFamily: 'Times New Roman', color: '#111' };
+                  const elems = slides[currentSlide]?.elements || [];
+                  updateSlide(currentSlide, { elements: [...elems, el] });
+                }}>
+                  <div className="flex items-center gap-2">∑ Equation</div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => {
+                  const url = prompt('Video URL (mp4/webm):');
+                  if (url) {
+                    const el = { id: Date.now(), type: 'video', src: url, x: 200, y: 240, width: 360, height: 220 };
+                    const elems = slides[currentSlide]?.elements || [];
+                    updateSlide(currentSlide, { elements: [...elems, el] });
+                  }
+                }}>
+                  <div className="flex items-center gap-2">🎞️ Video</div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => {
+                  const url = prompt('Audio URL (mp3/ogg):');
+                  if (url) {
+                    const el = { id: Date.now(), type: 'audio', src: url, x: 220, y: 280, width: 280, height: 40 };
+                    const elems = slides[currentSlide]?.elements || [];
+                    updateSlide(currentSlide, { elements: [...elems, el] });
+                  }
+                }}>
+                  <div className="flex items-center gap-2">🎵 Audio</div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => {
+                  const el = { id: Date.now(), type: 'textbox', content: '<span style=\"font-weight:800;text-shadow:0 2px 6px rgba(0,0,0,0.3)\">WordArt</span>', x: 160, y: 180, width: 280, height: 80, fontSize: 28, fontFamily: 'Georgia', color: '#111', backgroundColor: 'transparent' };
+                  const elems = slides[currentSlide]?.elements || [];
+                  updateSlide(currentSlide, { elements: [...elems, el] });
+                }}>
+                  <div className="flex items-center gap-2">🅆 WordArt</div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => {
+                  const el = { id: Date.now(), type: 'shape', shapeType: 'rectangle', fill: '#F0A500', stroke: '#8a6d00', strokeWidth: 2, x: 200, y: 220, width: 160, height: 100 };
+                  const elems = slides[currentSlide]?.elements || [];
+                  updateSlide(currentSlide, { elements: [...elems, el] });
+                }}>
+                  <div className="flex items-center gap-2">⬛ Rectangle</div>
+                </DropdownItem>
+              </DropdownMenu>
               
-              <button className="px-3 py-2 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-all duration-200">
-                Design
-              </button>
+              <DropdownMenu label="Design" align="left">
+                <DropdownItem onSelect={() => setShowTemplateLibrary(true)}>
+                  <div className="flex items-center gap-2">🎨 Templates</div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => setShowThemePicker(true)}>
+                  <div className="flex items-center gap-2">🎚️ Theme Presets</div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => setShowHeaderFooter(true)}>
+                  <div className="flex items-center gap-2">🧾 Header & Footer</div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => {
+                  const next = presentationMeta.slideSize === '16:9' ? '4:3' : '16:9';
+                  setPresentationMeta({ ...presentationMeta, slideSize: next, updatedAt: new Date().toISOString() });
+                }}>
+                  <div className="flex items-center gap-2">📐 Toggle Slide Size (Current: {presentationMeta.slideSize})</div>
+                </DropdownItem>
+                <DropdownItem onSelect={() => {
+                  const color = prompt('Slide background color (hex):', slides[currentSlide]?.background || '#ffffff');
+                  if (color) updateSlide(currentSlide, { background: color });
+                }}>
+                  <div className="flex items-center gap-2">🖌️ Format Background</div>
+                </DropdownItem>
+              </DropdownMenu>
               
               <button 
                 onClick={() => setActivePanel(activePanel === 'animations' ? null : 'animations')}
@@ -187,12 +310,7 @@ const Dashboard = () => {
                 Animations
               </button>
               
-              <button 
-                onClick={() => setIsSlideshow(true)}
-                className="px-3 py-2 text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-all duration-200"
-              >
-                Slideshow
-              </button>
+              {/* Slideshow removed per simplification */}
               
               <button 
                 onClick={() => setShowPresenterMode(true)}
@@ -246,47 +364,32 @@ const Dashboard = () => {
                 </svg>
               </button>
               
-              <button
-                onClick={toggleTheme}
-                className="p-2.5 rounded-lg bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-all duration-200"
-                title="Toggle Theme"
-              >
-                {isDark ? (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                  </svg>
-                )}
-              </button>
+              {/* Theme toggle hidden per requirement; functionality remains via context */}
             </div>
             
             <div className="h-6 w-px bg-neutral-300 dark:bg-neutral-700 mx-2"></div>
             
             {/* User Menu */}
             <div className="flex items-center space-x-3">
-              <div className="text-right">
-                <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                  {user?.name || 'User'}
-                </div>
-                <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                  {user?.email || 'user@example.com'}
-                </div>
-              </div>
-              <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center text-white text-sm font-medium">
-                {(user?.name || 'U').charAt(0).toUpperCase()}
-              </div>
-              <button
-                onClick={logout}
-                className="p-2 text-neutral-500 hover:text-red-600 dark:text-neutral-400 dark:hover:text-red-400 transition-colors duration-200"
-                title="Logout"
+              <DropdownMenu
+                label={<div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center text-white text-sm font-medium">{(user?.name || 'U').charAt(0).toUpperCase()}</div>}
+                align="right"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-              </button>
+                <div className="px-3 py-2 border-b border-[rgba(240,165,0,0.08)]">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center text-white text-sm font-medium">{(user?.name || 'U').charAt(0).toUpperCase()}</div>
+                    <div>
+                      <div className="text-sm font-semibold">{user?.name || 'User'}</div>
+                      <div className="text-xs text-neutral-400">{user?.email || 'user@example.com'}</div>
+                    </div>
+                  </div>
+                </div>
+                <DropdownItem onSelect={() => navigate('/profile')}>Custom Profile</DropdownItem>
+                <DropdownItem onSelect={() => navigate('/change-password')}>Change Password</DropdownItem>
+                <DropdownItem onSelect={() => navigate('/wallet')}>Wallet</DropdownItem>
+                <DropdownSeparator />
+                <DropdownItem onSelect={() => { try { localStorage.removeItem('authFlow'); } catch {} logout(); }}>Logout</DropdownItem>
+              </DropdownMenu>
             </div>
           </div>
         </div>
@@ -295,17 +398,40 @@ const Dashboard = () => {
       {/* Toolbar */}
       <Toolbar activePanel={activePanel} setActivePanel={setActivePanel} />
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar */}
-        <Sidebar />
+      {/* Main Content - Show blank state for first-time sign-in, else full editor */}
+      {authFlow === 'signin' ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center max-w-xl p-8">
+            <h2 className="text-3xl font-bold mb-2 nav-title">Welcome to EtherX PPT!</h2>
+            <p className="text-neutral-500 dark:text-neutral-400 mb-8">Get started by creating your first presentation or browse our templates.</p>
+            <div className="flex gap-4 justify-center">
+              <button
+                className="btn-primary px-6 py-3"
+                onClick={() => setActivePanel('layout')}
+              >
+                Create New Presentation
+              </button>
+              <button
+                className="btn-secondary px-6 py-3"
+                onClick={() => setShowTemplateLibrary(true)}
+              >
+                Explore Templates
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 flex overflow-hidden">
+          {/* Sidebar */}
+          <Sidebar />
 
-        {/* Slide Editor */}
-        <SlideEditor />
+          {/* Slide Editor */}
+          <SlideEditor />
 
-        {/* Right Panel */}
-        {renderRightPanel()}
-      </div>
+          {/* Right Panel */}
+          {renderRightPanel()}
+        </div>
+      )}
       
       {/* Speaker Notes */}
       <SpeakerNotes />
@@ -317,14 +443,7 @@ const Dashboard = () => {
             <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse-soft"></div>
             <span className="font-medium">Ready</span>
           </div>
-          <div className="w-px h-4 bg-neutral-300 dark:bg-neutral-700"></div>
-          <div className="flex items-center space-x-2">
-            <svg className="w-3 h-3 text-emerald-500" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>Auto-save: On</span>
-          </div>
-        </div>
+                  </div>
         <div className="flex items-center space-x-4">
           <span>Zoom: 100%</span>
           <div className="w-px h-4 bg-neutral-300 dark:bg-neutral-700"></div>
@@ -334,11 +453,7 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Slideshow */}
-      <SlideShow 
-        isActive={isSlideshow} 
-        onExit={() => setIsSlideshow(false)} 
-      />
+      {/* Slideshow removed */}
       
       {/* Presenter Mode */}
       <PresenterMode 
@@ -358,7 +473,7 @@ const Dashboard = () => {
         <TemplateLibrary onClose={() => setShowTemplateLibrary(false)} />
       )}
       
-      {showRecentPresentations && (
+      {showRecentPresentations && authFlow !== 'signin' && (
         <RecentPresentations 
           onClose={() => setShowRecentPresentations(false)}
           onLoadPresentation={(data) => console.log('Loaded:', data)}
@@ -372,13 +487,79 @@ const Dashboard = () => {
         />
       )}
       
+      {/* Insert/Design Modals */}
+      {showInsertChart && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="animate-zoom-in">
+            <ChartComponent onClose={() => setShowInsertChart(false)} />
+          </div>
+        </div>
+      )}
+      {showInsertTable && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="animate-zoom-in">
+            <TableComponent onClose={() => setShowInsertTable(false)} />
+          </div>
+        </div>
+      )}
+      {showHeaderFooter && (
+        <HeaderFooterModal onClose={() => setShowHeaderFooter(false)} meta={presentationMeta} onSave={(next) => setPresentationMeta({ ...presentationMeta, ...next, updatedAt: new Date().toISOString() })} />
+      )}
+      {showThemePicker && (
+        <ThemePresetPicker onClose={() => setShowThemePicker(false)} onSelect={(id) => setPresentationMeta({ ...presentationMeta, themePreset: id, updatedAt: new Date().toISOString() })} />
+      )}
+
       {/* New Feature Modals */}
       {showAIAssistant && <AIAssistant onClose={() => setShowAIAssistant(false)} />}
       {showCloudSync && <CloudSync onClose={() => setShowCloudSync(false)} />}
       {showAdvancedExport && <AdvancedExport onClose={() => setShowAdvancedExport(false)} />}
       {showInteractiveElements && <InteractiveElements onClose={() => setShowInteractiveElements(false)} />}
       {showVersionHistory && <VersionHistory onClose={() => setShowVersionHistory(false)} />}
+
+      {/* Favourites Modal - placeholder gated by auth */}
+      {showFavourites && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="modal w-96">
+            <div className="modal-header">
+              <h3 className="text-lg font-semibold">Favourites</h3>
+              <button onClick={() => setShowFavourites(false)} className="text-neutral-500 hover:text-neutral-700">✕</button>
+            </div>
+            <p className="text-neutral-600 dark:text-neutral-400 mb-2">Star presentations to see them here.</p>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setShowFavourites(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
       
+      {/* Info Modal */}
+      {showInfoModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+          <div className="modal w-[480px]">
+            <div className="modal-header">
+              <h3 className="nav-title">Information</h3>
+              <button onClick={() => setShowInfoModal(false)} className="btn-ghost">✕</button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm mb-1">Title</label>
+                <input className="form-input" value={presentationMeta.title || ''} onChange={(e) => setPresentationMeta({ ...presentationMeta, title: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm mb-1">Author</label>
+                <input className="form-input" value={presentationMeta.author || ''} onChange={(e) => setPresentationMeta({ ...presentationMeta, author: e.target.value })} />
+              </div>
+              <div className="text-sm text-neutral-400">Slides: {slides.length}</div>
+              <div className="text-sm text-neutral-400">Last Modified: {new Date(presentationMeta.updatedAt || Date.now()).toLocaleString()}</div>
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setShowInfoModal(false)} className="btn-secondary">Close</button>
+              <button onClick={() => { setPresentationMeta({ ...presentationMeta, updatedAt: new Date().toISOString() }); setShowInfoModal(false); }} className="btn-primary">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mobile View */}
       <MobileView />
     </div>

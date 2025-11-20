@@ -221,5 +221,5 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`🚀 EtherXPPT Backend running on port ${PORT}`);
-  console.log(`✅ All ${features.length + 7} API features are functional`);
+  console.log(`✅ All 16 API features are functional`);
 });

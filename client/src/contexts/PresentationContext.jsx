@@ -24,6 +24,29 @@ export const PresentationProvider = ({ children }) => {
   const [history, setHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [clipboard, setClipboard] = useState(null);
+  const [presentationMeta, setPresentationMeta] = useState({
+    title: 'Untitled',
+    author: '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    slideSize: '16:9',
+    themePreset: 'default',
+    header: { default: '', first: '', even: '', odd: '' },
+    footer: { default: '', first: '', even: '', odd: '' }
+  });
+
+  // Push a new snapshot into history (trimming future states)
+  const pushHistory = (nextSlides) => {
+    try {
+      const snapshot = JSON.parse(JSON.stringify(nextSlides));
+      const base = history.slice(0, historyIndex + 1);
+      const updated = [...base, snapshot];
+      setHistory(updated);
+      setHistoryIndex(base.length);
+    } catch (e) {
+      console.warn('History snapshot failed:', e);
+    }
+  };
 
   const addSlide = (layout = 'blank') => {
     const newSlide = {
@@ -35,8 +58,10 @@ export const PresentationProvider = ({ children }) => {
       layout,
       elements: []
     };
-    setSlides([...slides, newSlide]);
+    const next = [...slides, newSlide];
+    setSlides(next);
     setCurrentSlide(slides.length);
+    pushHistory(next);
   };
 
   const deleteSlide = (index) => {
@@ -46,15 +71,17 @@ export const PresentationProvider = ({ children }) => {
       if (currentSlide >= newSlides.length) {
         setCurrentSlide(newSlides.length - 1);
       }
+      pushHistory(newSlides);
     }
   };
 
   const duplicateSlide = (index) => {
     const slide = slides[index];
-    const newSlide = { ...slide, id: Date.now(), title: `${slide.title} Copy` };
+    const newSlide = { ...JSON.parse(JSON.stringify(slide)), id: Date.now(), title: `${slide.title} Copy` };
     const newSlides = [...slides];
     newSlides.splice(index + 1, 0, newSlide);
     setSlides(newSlides);
+    pushHistory(newSlides);
   };
 
   const resetSlide = (index) => {
@@ -65,16 +92,70 @@ export const PresentationProvider = ({ children }) => {
       elements: []
     };
     setSlides(newSlides);
+    pushHistory(newSlides);
   };
 
   const updateSlide = (index, updates) => {
     const newSlides = [...slides];
     newSlides[index] = { ...newSlides[index], ...updates };
     setSlides(newSlides);
+    pushHistory(newSlides);
   };
 
   const applyLayout = (index, layout) => {
-    updateSlide(index, { layout });
+    const newSlides = [...slides];
+    const current = { ...newSlides[index] };
+
+    // Initialize layout-specific metadata and fields
+    let layoutMeta = {};
+    switch (layout) {
+      case 'blank':
+        layoutMeta = { type: 'blank' };
+        // Clear standard fields for blank if desired
+        current.title = '';
+        current.content = '';
+        break;
+      case 'title-content':
+        layoutMeta = { type: 'title-content' };
+        current.title = current.title || '';
+        current.content = current.content || '';
+        break;
+      case 'title-only':
+        layoutMeta = { type: 'title-only' };
+        current.title = current.title || '';
+        current.content = '';
+        break;
+      case 'content-only':
+        layoutMeta = { type: 'content-only' };
+        current.title = '';
+        current.content = current.content || '';
+        break;
+      case 'two-column':
+        layoutMeta = { type: 'two-column', columns: 2 };
+        current.contentLeft = current.contentLeft || '';
+        current.contentRight = current.contentRight || '';
+        break;
+      case 'image-text':
+        layoutMeta = { type: 'image-text', regions: [{ type: 'image' }, { type: 'text' }] };
+        current.imageSrc = current.imageSrc || '';
+        current.content = current.content || '';
+        break;
+      case 'comparison':
+        layoutMeta = { type: 'comparison', columns: 2 };
+        current.compLeftTitle = current.compLeftTitle || '';
+        current.compLeftContent = current.compLeftContent || '';
+        current.compRightTitle = current.compRightTitle || '';
+        current.compRightContent = current.compRightContent || '';
+        break;
+      default:
+        layoutMeta = { type: layout };
+    }
+
+    current.layout = layout;
+    current.layoutMeta = layoutMeta;
+    newSlides[index] = current;
+    setSlides(newSlides);
+    pushHistory(newSlides);
   };
 
   const undo = () => {
@@ -97,17 +178,39 @@ export const PresentationProvider = ({ children }) => {
 
   const paste = () => {
     if (clipboard) {
-      const newSlide = { ...clipboard, id: Date.now() };
-      setSlides([...slides, newSlide]);
+      const newSlide = { ...JSON.parse(JSON.stringify(clipboard)), id: Date.now() };
+      const next = [...slides, newSlide];
+      setSlides(next);
+      pushHistory(next);
     }
   };
 
+  const reorderSlides = (fromIndex, toIndex) => {
+    if (fromIndex === toIndex) return;
+    const next = [...slides];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    setSlides(next);
+    setCurrentSlide(toIndex);
+    pushHistory(next);
+  };
+
+  useEffect(() => {
+    // initialize history on mount
+    if (historyIndex === -1) {
+      const initial = JSON.parse(JSON.stringify(slides));
+      setHistory([initial]);
+      setHistoryIndex(0);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const interval = setInterval(() => {
-      localStorage.setItem('presentation', JSON.stringify(slides));
+      localStorage.setItem('presentation', JSON.stringify({ slides, presentationMeta }));
     }, 30000);
     return () => clearInterval(interval);
-  }, [slides]);
+  }, [slides, presentationMeta]);
 
   const value = {
     slides,
@@ -124,7 +227,10 @@ export const PresentationProvider = ({ children }) => {
     redo,
     copy,
     paste,
-    clipboard
+    clipboard,
+    presentationMeta,
+    setPresentationMeta,
+    reorderSlides
   };
 
   return (

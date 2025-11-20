@@ -3,7 +3,7 @@ import { usePresentation } from '../contexts/PresentationContext';
 
 const AnimationPanel = () => {
   const { slides, currentSlide, updateSlide } = usePresentation();
-  const [selectedElement, setSelectedElement] = useState(null);
+  const [selectedElement, setSelectedElement] = useState('');
   
   const slide = slides[currentSlide] || {};
   const animations = slide.animations || [];
@@ -16,21 +16,45 @@ const AnimationPanel = () => {
     { id: 'slideInDown', name: 'Slide In Down', icon: '⬇️' },
     { id: 'zoomIn', name: 'Zoom In', icon: '🔍' },
     { id: 'bounce', name: 'Bounce', icon: '⚡' },
-    { id: 'pulse', name: 'Pulse', icon: '💓' }
+    { id: 'pulse', name: 'Pulse', icon: '💓' },
+    { id: 'float', name: 'Float In', icon: '🎈' },
+    { id: 'rotate', name: 'Rotate', icon: '🌀' }
   ];
 
-  const addAnimation = (elementId, animationType) => {
+  const addAnimation = (target, animationType) => {
     const newAnimation = {
       id: Date.now(),
-      elementId,
+      target, // 'title' | 'content' | elementId
       type: animationType,
       duration: 1000,
       delay: 0,
       order: animations.length
     };
-    
-    const updatedAnimations = [...animations, newAnimation];
-    updateSlide(currentSlide, { animations: updatedAnimations });
+    updateSlide(currentSlide, { animations: [...animations, newAnimation] });
+  };
+
+  const updateAnimation = (id, field, value) => {
+    const updated = animations.map(a => (a.id === id ? { ...a, [field]: value } : a));
+    updateSlide(currentSlide, { animations: updated });
+  };
+
+  const moveAnimation = (id, dir) => {
+    const idx = animations.findIndex(a => a.id === id);
+    if (idx === -1) return;
+    const newOrder = [...animations];
+    const swapWith = dir === 'up' ? idx - 1 : idx + 1;
+    if (swapWith < 0 || swapWith >= newOrder.length) return;
+    const tmp = newOrder[idx];
+    newOrder[idx] = newOrder[swapWith];
+    newOrder[swapWith] = tmp;
+    // Reassign order values
+    const reassigned = newOrder.map((a, i) => ({ ...a, order: i }));
+    updateSlide(currentSlide, { animations: reassigned });
+  };
+
+  const previewAnimations = () => {
+    // Placeholder hook for preview; integrate with SlideEditor playback if desired
+    console.log('Preview animations for slide', currentSlide, animations);
   };
 
   const removeAnimation = (animationId) => {
@@ -47,37 +71,27 @@ const AnimationPanel = () => {
       
       <div className="space-y-4">
         <div>
-          <label className="block text-xs font-medium text-neutral-300 mb-2">
-            Select Element
-          </label>
+          <label className="block text-xs font-medium text-neutral-300 mb-2">Target</label>
           <select
-            value={selectedElement || ''}
+            value={selectedElement}
             onChange={(e) => setSelectedElement(e.target.value)}
             className="form-select"
           >
-            <option value="">Choose element...</option>
+            <option value="">Choose target...</option>
             <option value="title">Title</option>
             <option value="content">Content</option>
             {elements.map(el => (
-              <option key={el.id} value={el.id}>
-                {el.type} - {el.id}
-              </option>
+              <option key={el.id} value={el.id}>{el.type} - {el.id}</option>
             ))}
           </select>
         </div>
 
         {selectedElement && (
           <div>
-            <label className="block text-xs font-medium text-neutral-300 mb-2">
-              Animation Type
-            </label>
+            <label className="block text-xs font-medium text-neutral-300 mb-2">Animation Type</label>
             <div className="grid grid-cols-2 gap-2">
               {animationTypes.map(anim => (
-                <button
-                  key={anim.id}
-                  onClick={() => addAnimation(selectedElement, anim.id)}
-                  className="btn-secondary flex flex-col items-center justify-center p-2 text-xs"
-                >
+                <button key={anim.id} onClick={() => addAnimation(selectedElement, anim.id)} className="btn-secondary flex flex-col items-center justify-center p-2 text-xs">
                   <div>{anim.icon}</div>
                   <div className="mt-1">{anim.name}</div>
                 </button>
@@ -87,29 +101,39 @@ const AnimationPanel = () => {
         )}
 
         <div>
-          <label className="block text-xs font-medium text-neutral-300 mb-2">
-            Current Animations
-          </label>
+          <label className="block text-xs font-medium text-neutral-300 mb-2">Current Animations</label>
           <div className="space-y-2 max-h-48 overflow-y-auto">
             {animations.map(anim => (
-              <div key={anim.id} className="flex items-center justify-between p-2 card">
-                <div className="text-xs">
-                  <div className="font-medium">{anim.type}</div>
-                  <div className="text-neutral-400">Element: {anim.elementId}</div>
+              <div key={anim.id} className="p-2 card">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs">
+                    <div className="font-medium">{anim.type}</div>
+                    <div className="text-neutral-400">Target: {anim.target}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button className="btn-ghost" onClick={() => moveAnimation(anim.id, 'up')} title="Move Up">▲</button>
+                    <button className="btn-ghost" onClick={() => moveAnimation(anim.id, 'down')} title="Move Down">▼</button>
+                    <button className="text-red-400 hover:text-red-600" onClick={() => removeAnimation(anim.id)} title="Remove">×</button>
+                  </div>
                 </div>
-                <button
-                  onClick={() => removeAnimation(anim.id)}
-                  className="text-red-400 hover:text-red-600"
-                >
-                  ×
-                </button>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div>
+                    <label className="block text-[10px] text-neutral-400 mb-1">Duration (ms)</label>
+                    <input type="number" className="form-input" value={anim.duration} onChange={(e) => updateAnimation(anim.id, 'duration', parseInt(e.target.value) || 0)} />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-neutral-400 mb-1">Delay (ms)</label>
+                    <input type="number" className="form-input" value={anim.delay} onChange={(e) => updateAnimation(anim.id, 'delay', parseInt(e.target.value) || 0)} />
+                  </div>
+                </div>
               </div>
             ))}
             {animations.length === 0 && (
-              <div className="text-xs text-neutral-400 text-center py-4">
-                No animations added
-              </div>
+              <div className="text-xs text-neutral-400 text-center py-4">No animations added</div>
             )}
+          </div>
+          <div className="mt-3">
+            <button className="btn-secondary w-full" onClick={previewAnimations}>Preview</button>
           </div>
         </div>
       </div>

@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { usePresentation } from '../contexts/PresentationContext';
 
 const Sidebar = () => {
-  const { slides, currentSlide, setCurrentSlide, addSlide, deleteSlide, duplicateSlide } = usePresentation();
+  const { slides, currentSlide, setCurrentSlide, addSlide, deleteSlide, duplicateSlide, reorderSlides } = usePresentation();
   const [draggedSlide, setDraggedSlide] = useState(null);
+  const [hoverIndex, setHoverIndex] = useState(null);
   const [showContextMenu, setShowContextMenu] = useState(null);
 
   const handleSlideClick = (index) => {
@@ -29,10 +30,10 @@ const Sidebar = () => {
   const handleDrop = (e, dropIndex) => {
     e.preventDefault();
     if (draggedSlide !== null && draggedSlide !== dropIndex) {
-      // Handle slide reordering logic here
-      console.log(`Move slide ${draggedSlide} to position ${dropIndex}`);
+      reorderSlides(draggedSlide, dropIndex);
     }
     setDraggedSlide(null);
+    setHoverIndex(null);
   };
 
   return (
@@ -73,19 +74,24 @@ const Sidebar = () => {
             onContextMenu={(e) => handleRightClick(e, index)}
             draggable
             onDragStart={(e) => handleDragStart(e, index)}
-            onDragOver={handleDragOver}
+            onDragOver={(e) => { handleDragOver(e); setHoverIndex(index); }}
             onDrop={(e) => handleDrop(e, index)}
           >
             {/* Slide Thumbnail - switched to themed class for consistent look */}
-            <div className={`slide-thumbnail ${currentSlide === index ? 'selected' : ''}`}>
+            <div className={`slide-thumbnail ${currentSlide === index ? 'selected' : ''} ${hoverIndex === index && draggedSlide !== null ? 'ring-2 ring-primary-400' : ''}`}>
               {/* Slide Number */}
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
                   {index + 1}
                 </span>
-                {currentSlide === index && (
-                  <div className="w-2 h-2 bg-primary-500 rounded-full animate-pulse-soft"></div>
-                )}
+                <div className="flex items-center gap-1">
+                  {currentSlide === index && (
+                    <div className="w-2 h-2 bg-primary-500 rounded-full animate-pulse-soft"></div>
+                  )}
+                  {(slide.animations && slide.animations.length > 0) && (
+                    <div className="text-[10px]" title="Has animations">★</div>
+                  )}
+                </div>
               </div>
               
               {/* Slide Preview */}

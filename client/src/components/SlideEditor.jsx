@@ -2,19 +2,25 @@ import React, { useState, useRef, useEffect } from 'react';
 import { usePresentation } from '../contexts/PresentationContext';
 import ChartComponent from './ChartComponent';
 import TableComponent from './TableComponent';
+import HeaderFooterModal from './HeaderFooterModal';
 
 const SlideEditor = () => {
-  const { slides, currentSlide, updateSlide } = usePresentation();
+  const { slides, currentSlide, updateSlide, presentationMeta, setPresentationMeta } = usePresentation();
   const [selectedElement, setSelectedElement] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [showChartModal, setShowChartModal] = useState(false);
+  const [editChartIndex, setEditChartIndex] = useState(null);
   const [showTableModal, setShowTableModal] = useState(false);
+  const [showHeaderFooter, setShowHeaderFooter] = useState(false);
+  const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, elementId: null });
+  const [elementClipboard, setElementClipboard] = useState(null);
   const titleRef = useRef(null);
   const contentRef = useRef(null);
   
   const slide = slides[currentSlide] || {};
+  const layoutType = (slide.layoutMeta && slide.layoutMeta.type) || slide.layout || 'title-content';
 
   const handleTitleEdit = (e) => {
     updateSlide(currentSlide, { title: e.target.innerHTML });
@@ -24,9 +30,34 @@ const SlideEditor = () => {
     updateSlide(currentSlide, { content: e.target.innerHTML });
   };
 
+  // Layout-specific editors
+  const handleLeftEdit = (e) => updateSlide(currentSlide, { contentLeft: e.target.innerHTML });
+  const handleRightEdit = (e) => updateSlide(currentSlide, { contentRight: e.target.innerHTML });
+  const handleCompLeftTitleEdit = (e) => updateSlide(currentSlide, { compLeftTitle: e.target.innerHTML });
+  const handleCompLeftContentEdit = (e) => updateSlide(currentSlide, { compLeftContent: e.target.innerHTML });
+  const handleCompRightTitleEdit = (e) => updateSlide(currentSlide, { compRightTitle: e.target.innerHTML });
+  const handleCompRightContentEdit = (e) => updateSlide(currentSlide, { compRightContent: e.target.innerHTML });
+
+  const handleImageTextInputChange = (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e2) => {
+        updateSlide(currentSlide, { imageSrc: e2.target.result });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const formatText = (command, value = null) => {
     document.execCommand(command, false, value);
   };
+  const setFontName = (name) => document.execCommand('fontName', false, name);
+  const justify = (dir) => document.execCommand(dir, false, null);
+  const toggleUL = () => document.execCommand('insertUnorderedList', false, null);
+  const toggleOL = () => document.execCommand('insertOrderedList', false, null);
+  const indent = () => document.execCommand('indent', false, null);
+  const outdent = () => document.execCommand('outdent', false, null);
 
   const addTextBox = () => {
     const newElement = {
@@ -85,9 +116,37 @@ const SlideEditor = () => {
     setSelectedElement(null);
   };
 
+  // Context menu actions for elements
+  const cloneElement = (el) => ({ ...JSON.parse(JSON.stringify(el)), id: Date.now(), x: (el.x || 0) + 12, y: (el.y || 0) + 12 });
+  const copyElement = (elementId) => {
+    const el = (slide.elements || []).find(e => e.id === elementId);
+    if (el) setElementClipboard(JSON.parse(JSON.stringify(el)));
+  };
+  const cutElement = (elementId) => {
+    copyElement(elementId);
+    deleteElement(elementId);
+  };
+  const pasteElement = () => {
+    if (!elementClipboard) return;
+    const newEl = cloneElement(elementClipboard);
+    const elems = slide.elements || [];
+    updateSlide(currentSlide, { elements: [...elems, newEl] });
+    setSelectedElement(newEl.id);
+  };
+  const duplicateElement = (elementId) => {
+    const el = (slide.elements || []).find(e => e.id === elementId);
+    if (el) {
+      const newEl = cloneElement(el);
+      const elems = slide.elements || [];
+      updateSlide(currentSlide, { elements: [...elems, newEl] });
+      setSelectedElement(newEl.id);
+    }
+  };
+
   const handleMouseDown = (e, elementId) => {
     e.preventDefault();
     setSelectedElement(elementId);
+    setContextMenu({ visible: false, x: 0, y: 0, elementId: null });
     setIsDragging(true);
     
     const element = (slide.elements || []).find(el => el.id === elementId);
@@ -115,6 +174,29 @@ const SlideEditor = () => {
     setIsDragging(false);
   };
 
+  // Keyboard shortcuts for element operations
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!selectedElement && !elementClipboard) return;
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key.toLowerCase() === 'c' && selectedElement) {
+          e.preventDefault();
+          copyElement(selectedElement);
+        }
+        if (e.key.toLowerCase() === 'x' && selectedElement) {
+          e.preventDefault();
+          cutElement(selectedElement);
+        }
+        if (e.key.toLowerCase() === 'v') {
+          e.preventDefault();
+          pasteElement();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedElement, elementClipboard, slide]);
+
   return (
     <div className="flex-1 p-6">
       {/* Modern Formatting Toolbar - now uses themed panel styles */}
@@ -123,63 +205,55 @@ const SlideEditor = () => {
           <div className="flex items-center gap-3 flex-wrap">
             {/* Text Formatting Group */}
             <div className="flex items-center gap-1 px-3 py-1 rounded-lg">
-              <button
-                onClick={() => formatText('bold')}
-                className="toolbar-btn"
-                title="Bold (Ctrl+B)"
-              >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M15.6 10.79c.97-.67 1.65-1.77 1.65-2.79 0-2.26-1.75-4-4-4H7v14h7.04c2.09 0 3.71-1.7 3.71-3.79 0-1.52-.86-2.82-2.15-3.42zM10 6.5h3c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-3v-3zm3.5 9H10v-3h3.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5z"/>
-                </svg>
+              <button onClick={() => formatText('bold')} className="toolbar-btn" title="Bold (Ctrl+B)">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M15.6 10.79c.97-.67 1.65-1.77 1.65-2.79 0-2.26-1.75-4-4-4H7v14h7.04c2.09 0 3.71-1.7 3.71-3.79 0-1.52-.86-2.82-2.15-3.42zM10 6.5h3c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-3v-3zm3.5 9H10v-3h3.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5z"/></svg>
               </button>
-              <button
-                onClick={() => formatText('italic')}
-                className="toolbar-btn"
-                title="Italic (Ctrl+I)"
-              >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M10 4v3h2.21l-3.42 8H6v3h8v-3h-2.21l3.42-8H18V4h-8z"/>
-                </svg>
+              <button onClick={() => formatText('italic')} className="toolbar-btn" title="Italic (Ctrl+I)">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M10 4v3h2.21l-3.42 8H6v3h8v-3h-2.21l3.42-8H18V4h-8z"/></svg>
               </button>
-              <button
-                onClick={() => formatText('underline')}
-                className="toolbar-btn"
-                title="Underline (Ctrl+U)"
-              >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 17c3.31 0 6-2.69 6-6V3h-2.5v8c0 1.93-1.57 3.5-3.5 3.5S8.5 12.93 8.5 11V3H6v8c0 3.31 2.69 6 6 6zm-7 2v2h14v-2H5z"/>
-                </svg>
+              <button onClick={() => formatText('underline')} className="toolbar-btn" title="Underline (Ctrl+U)">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 17c3.31 0 6-2.69 6-6V3h-2.5v8c0 1.93-1.57 3.5-3.5 3.5S8.5 12.93 8.5 11V3H6v8c0 3.31 2.69 6 6 6zm-7 2v2h14v-2H5z"/></svg>
               </button>
             </div>
-            
+
             <div className="w-px h-8 bg-neutral-300 dark:bg-neutral-700"></div>
-            
-            {/* Font Size and Color */}
+
+            {/* Font Family, Size and Color */}
             <div className="flex items-center gap-2">
-              <select
-                onChange={(e) => formatText('fontSize', e.target.value)}
-                className="form-select text-sm min-w-20"
-                defaultValue="16"
-              >
-                <option value="12">12px</option>
-                <option value="14">14px</option>
-                <option value="16">16px</option>
-                <option value="18">18px</option>
-                <option value="24">24px</option>
-                <option value="32">32px</option>
-                <option value="48">48px</option>
+              <select onChange={(e) => setFontName(e.target.value)} className="form-select text-sm">
+                <option value="Inter">Inter</option>
+                <option value="Arial">Arial</option>
+                <option value="Times New Roman">Times New Roman</option>
+                <option value="Calibri">Calibri</option>
+                <option value="Comic Sans MS">Comic Sans</option>
+                <option value="Georgia">Georgia</option>
+                <option value="Verdana">Verdana</option>
               </select>
-              
+              <select onChange={(e) => formatText('fontSize', e.target.value)} className="form-select text-sm">
+                {[8,10,12,14,16,18,24,32,48,64,72,96].map(sz => (
+                  <option key={sz} value={sz}>{sz}px</option>
+                ))}
+              </select>
               <div className="relative">
-                <input
-                  type="color"
-                  onChange={(e) => formatText('foreColor', e.target.value)}
-                  className="w-10 h-10 rounded-lg cursor-pointer form-input"
-                  title="Text Color"
-                />
+                <input type="color" onChange={(e) => formatText('foreColor', e.target.value)} className="w-10 h-10 rounded-lg cursor-pointer form-input" title="Text Color" />
               </div>
             </div>
-            
+
+            <div className="w-px h-8 bg-neutral-300 dark:bg-neutral-700"></div>
+
+            {/* Alignment and Lists */}
+            <div className="flex items-center gap-1">
+              <button onClick={() => justify('justifyLeft')} className="toolbar-btn" title="Align Left">⯇</button>
+              <button onClick={() => justify('justifyCenter')} className="toolbar-btn" title="Align Center">≡</button>
+              <button onClick={() => justify('justifyRight')} className="toolbar-btn" title="Align Right">⯈</button>
+              <button onClick={() => justify('justifyFull')} className="toolbar-btn" title="Justify">▤</button>
+              <div className="w-px h-6 bg-neutral-300 dark:bg-neutral-700 mx-1"></div>
+              <button onClick={toggleUL} className="toolbar-btn" title="Bulleted List">• • •</button>
+              <button onClick={toggleOL} className="toolbar-btn" title="Numbered List">1. 2. 3.</button>
+              <button onClick={outdent} className="toolbar-btn" title="Outdent">«</button>
+              <button onClick={indent} className="toolbar-btn" title="Indent">»</button>
+            </div>
+
             <div className="w-px h-8 bg-neutral-300 dark:bg-neutral-700"></div>
             
             {/* Insert Elements */}
@@ -212,7 +286,7 @@ const SlideEditor = () => {
               </label>
               
               <button
-                onClick={() => setShowChartModal(true)}
+                onClick={() => { setEditChartIndex(null); setShowChartModal(true); }}
                 className="btn-secondary flex items-center gap-2"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -251,6 +325,25 @@ const SlideEditor = () => {
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
           >
+            {/* Header/Footer overlays */}
+            <div className="absolute top-2 left-4 right-4 text-xs text-neutral-700">
+              {(() => {
+                const idx = currentSlide;
+                const hf = presentationMeta?.header || {};
+                const txt = idx === 0 && hf.first ? hf.first : (idx % 2 === 0 && hf.even ? hf.even : (idx % 2 === 1 && hf.odd ? hf.odd : hf.default));
+                const total = slides.length;
+                return (txt || '').replaceAll('{page}', String(idx + 1)).replaceAll('{total}', String(total));
+              })()}
+            </div>
+            <div className="absolute bottom-2 left-4 right-4 text-xs text-neutral-700 text-right">
+              {(() => {
+                const idx = currentSlide;
+                const ff = presentationMeta?.footer || {};
+                const txt = idx === 0 && ff.first ? ff.first : (idx % 2 === 0 && ff.even ? ff.even : (idx % 2 === 1 && ff.odd ? ff.odd : ff.default));
+                const total = slides.length;
+                return (txt || '').replaceAll('{page}', String(idx + 1)).replaceAll('{total}', String(total));
+              })()}
+            </div>
             {/* Subtle Grid Pattern */}
             <div className="absolute inset-0 opacity-5 dark:opacity-10" style={{
               backgroundImage: `
@@ -259,29 +352,144 @@ const SlideEditor = () => {
               `,
               backgroundSize: '20px 20px'
             }}></div>
-            {/* Modern Title Area */}
-            <div
-              ref={titleRef}
-              contentEditable
-              suppressContentEditableWarning={true}
-              onBlur={handleTitleEdit}
-              onFocus={() => setIsEditing(true)}
-              className="absolute top-12 left-12 right-12 text-4xl font-bold text-center outline-none min-h-[60px] p-4 rounded-xl transition-all duration-200 bg-transparent"
-              style={{ color: slide.textColor || '#1f2937' }}
-              dangerouslySetInnerHTML={{ __html: slide.title || '<span style="color:rgba(255,255,255,0.45)">Click to add title</span>' }}
-            />
+            {/* Layout-aware regions */}
+            {layoutType === 'title-content' && (
+              <>
+                <div
+                  ref={titleRef}
+                  contentEditable
+                  suppressContentEditableWarning={true}
+                  onBlur={handleTitleEdit}
+                  onFocus={() => setIsEditing(true)}
+                  className="absolute top-12 left-12 right-12 text-4xl font-bold text-center outline-none min-h-[60px] p-4 rounded-xl transition-all duration-200 bg-transparent"
+                  style={{ color: slide.textColor || '#1f2937' }}
+                  dangerouslySetInnerHTML={{ __html: slide.title || '<span style=\"color:rgba(255,255,255,0.45)\">Click to add title</span>' }}
+                />
+                <div
+                  ref={contentRef}
+                  contentEditable
+                  suppressContentEditableWarning={true}
+                  onBlur={handleContentEdit}
+                  onFocus={() => setIsEditing(true)}
+                  className="absolute top-32 left-12 right-12 bottom-12 text-lg outline-none p-6 rounded-xl transition-all duration-200 bg-transparent"
+                  style={{ color: slide.textColor || '#374151' }}
+                  dangerouslySetInnerHTML={{ __html: slide.content || '<span style=\"color:rgba(255,255,255,0.45)\">Click to add content</span>' }}
+                />
+              </>
+            )}
 
-            {/* Modern Content Area */}
-            <div
-              ref={contentRef}
-              contentEditable
-              suppressContentEditableWarning={true}
-              onBlur={handleContentEdit}
-              onFocus={() => setIsEditing(true)}
-              className="absolute top-32 left-12 right-12 bottom-12 text-lg outline-none p-6 rounded-xl transition-all duration-200 bg-transparent"
-              style={{ color: slide.textColor || '#374151' }}
-              dangerouslySetInnerHTML={{ __html: slide.content || '<span style="color:rgba(255,255,255,0.45)">Click to add content</span>' }}
-            />
+            {layoutType === 'title-only' && (
+              <div
+                ref={titleRef}
+                contentEditable
+                suppressContentEditableWarning={true}
+                onBlur={handleTitleEdit}
+                onFocus={() => setIsEditing(true)}
+                className="absolute top-24 left-12 right-12 text-4xl font-bold text-center outline-none min-h-[60px] p-4 rounded-xl transition-all duration-200 bg-transparent"
+                style={{ color: slide.textColor || '#1f2937' }}
+                dangerouslySetInnerHTML={{ __html: slide.title || '<span style=\"color:rgba(255,255,255,0.45)\">Click to add title</span>' }}
+              />
+            )}
+
+            {layoutType === 'content-only' && (
+              <div
+                ref={contentRef}
+                contentEditable
+                suppressContentEditableWarning={true}
+                onBlur={handleContentEdit}
+                onFocus={() => setIsEditing(true)}
+                className="absolute top-16 left-12 right-12 bottom-12 text-lg outline-none p-6 rounded-xl transition-all duration-200 bg-transparent"
+                style={{ color: slide.textColor || '#374151' }}
+                dangerouslySetInnerHTML={{ __html: slide.content || '<span style=\"color:rgba(255,255,255,0.45)\">Click to add content</span>' }}
+              />
+            )}
+
+            {layoutType === 'two-column' && (
+              <div className="absolute inset-0 pt-20 px-12 pb-12 grid grid-cols-2 gap-6">
+                <div
+                  contentEditable
+                  suppressContentEditableWarning={true}
+                  onBlur={handleLeftEdit}
+                  className="text-lg outline-none p-4 rounded-xl bg-transparent min-h-[200px]"
+                  style={{ color: slide.textColor || '#374151' }}
+                  dangerouslySetInnerHTML={{ __html: slide.contentLeft || '<span style=\"color:rgba(255,255,255,0.45)\">Left content</span>' }}
+                />
+                <div
+                  contentEditable
+                  suppressContentEditableWarning={true}
+                  onBlur={handleRightEdit}
+                  className="text-lg outline-none p-4 rounded-xl bg-transparent min-h-[200px]"
+                  style={{ color: slide.textColor || '#374151' }}
+                  dangerouslySetInnerHTML={{ __html: slide.contentRight || '<span style=\"color:rgba(255,255,255,0.45)\">Right content</span>' }}
+                />
+              </div>
+            )}
+
+            {layoutType === 'image-text' && (
+              <div className="absolute inset-0 pt-16 px-12 pb-12 grid grid-cols-2 gap-6">
+                <div className="relative flex items-center justify-center rounded-xl border border-[rgba(0,0,0,0.06)] bg-white/30 overflow-hidden">
+                  {slide.imageSrc ? (
+                    <img src={slide.imageSrc} alt="Slide" className="max-w-full max-h-full object-contain" />
+                  ) : (
+                    <label htmlFor="image-text-upload" className="text-sm text-neutral-600 dark:text-neutral-300 cursor-pointer">
+                      Click to upload image
+                    </label>
+                  )}
+                  <input id="image-text-upload" type="file" accept="image/*" className="hidden" onChange={handleImageTextInputChange} />
+                </div>
+                <div
+                  contentEditable
+                  suppressContentEditableWarning={true}
+                  onBlur={handleContentEdit}
+                  className="text-lg outline-none p-4 rounded-xl bg-transparent min-h-[200px]"
+                  style={{ color: slide.textColor || '#374151' }}
+                  dangerouslySetInnerHTML={{ __html: slide.content || '<span style=\"color:rgba(255,255,255,0.45)\">Add text</span>' }}
+                />
+              </div>
+            )}
+
+            {layoutType === 'comparison' && (
+              <div className="absolute inset-0 pt-12 px-12 pb-12 grid grid-cols-2 gap-6">
+                <div>
+                  <div
+                    contentEditable
+                    suppressContentEditableWarning={true}
+                    onBlur={handleCompLeftTitleEdit}
+                    className="text-2xl font-semibold outline-none p-2 rounded-xl bg-transparent min-h-[40px] mb-2 text-center"
+                    style={{ color: slide.textColor || '#1f2937' }}
+                    dangerouslySetInnerHTML={{ __html: slide.compLeftTitle || '<span style=\"color:rgba(255,255,255,0.45)\">Left heading</span>' }}
+                  />
+                  <div
+                    contentEditable
+                    suppressContentEditableWarning={true}
+                    onBlur={handleCompLeftContentEdit}
+                    className="text-lg outline-none p-4 rounded-xl bg-transparent min-h-[160px]"
+                    style={{ color: slide.textColor || '#374151' }}
+                    dangerouslySetInnerHTML={{ __html: slide.compLeftContent || '<span style=\"color:rgba(255,255,255,0.45)\">Left content</span>' }}
+                  />
+                </div>
+                <div>
+                  <div
+                    contentEditable
+                    suppressContentEditableWarning={true}
+                    onBlur={handleCompRightTitleEdit}
+                    className="text-2xl font-semibold outline-none p-2 rounded-xl bg-transparent min-h-[40px] mb-2 text-center"
+                    style={{ color: slide.textColor || '#1f2937' }}
+                    dangerouslySetInnerHTML={{ __html: slide.compRightTitle || '<span style=\"color:rgba(255,255,255,0.45)\">Right heading</span>' }}
+                  />
+                  <div
+                    contentEditable
+                    suppressContentEditableWarning={true}
+                    onBlur={handleCompRightContentEdit}
+                    className="text-lg outline-none p-4 rounded-xl bg-transparent min-h-[160px]"
+                    style={{ color: slide.textColor || '#374151' }}
+                    dangerouslySetInnerHTML={{ __html: slide.compRightContent || '<span style=\"color:rgba(255,255,255,0.45)\">Right content</span>' }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {layoutType === 'blank' && null}
 
             {/* Modern Dynamic Elements */}
             {(slide.elements || []).map((element) => (
@@ -302,6 +510,11 @@ const SlideEditor = () => {
               }}
               onMouseDown={(e) => handleMouseDown(e, element.id)}
               onClick={() => setSelectedElement(element.id)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setSelectedElement(element.id);
+                setContextMenu({ visible: true, x: e.clientX, y: e.clientY, elementId: element.id });
+              }}
             >
               {element.type === 'textbox' && (
                 <div
@@ -361,13 +574,31 @@ const SlideEditor = () => {
                   {element.content}
                 </div>
               )}
+
+              {element.type === 'video' && (
+                <video src={element.src} className="w-full h-full rounded" controls />
+              )}
+
+              {element.type === 'audio' && (
+                <div className="w-full h-full flex items-center justify-center">
+                  <audio src={element.src} controls className="w-[90%]" />
+                </div>
+              )}
               
               {element.type === 'chart' && (
-                <div className="w-full h-full p-2">
+                <div className="w-full h-full p-2 relative">
                   <div className="text-xs font-medium mb-1">{element.title}</div>
                   <div className="w-full h-full bg-gray-100 rounded flex items-center justify-center">
                     📊 {element.chartType.toUpperCase()} Chart
                   </div>
+                  {selectedElement === element.id && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); const idx = (slide.elements || []).findIndex(el => el.id === element.id); setEditChartIndex(idx); setShowChartModal(true); }}
+                      className="absolute top-2 right-2 btn-secondary text-xs px-2 py-1"
+                    >
+                      Edit Chart
+                    </button>
+                  )}
                 </div>
               )}
               
@@ -495,7 +726,7 @@ const SlideEditor = () => {
       {showChartModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fade-in">
           <div className="animate-zoom-in">
-            <ChartComponent onClose={() => setShowChartModal(false)} />
+            <ChartComponent onClose={() => { setShowChartModal(false); setEditChartIndex(null); }} elementIndex={editChartIndex} />
           </div>
         </div>
       )}
@@ -504,6 +735,27 @@ const SlideEditor = () => {
           <div className="animate-zoom-in">
             <TableComponent onClose={() => setShowTableModal(false)} />
           </div>
+        </div>
+      )}
+    {showHeaderFooter && (
+        <HeaderFooterModal
+          onClose={() => setShowHeaderFooter(false)}
+          meta={presentationMeta}
+          onSave={(next) => setPresentationMeta({ ...presentationMeta, ...next })}
+        />
+      )}
+    {/* Element Context Menu */}
+      {contextMenu.visible && (
+        <div
+          className="dropdown-menu fixed z-[100]"
+          style={{ left: contextMenu.x + 4, top: contextMenu.y + 4 }}
+          onMouseLeave={() => setContextMenu({ visible: false, x: 0, y: 0, elementId: null })}
+        >
+          <button className="dropdown-item" onClick={() => { copyElement(contextMenu.elementId); setContextMenu({ visible: false, x: 0, y: 0, elementId: null }); }}>Copy	Ctrl+C</button>
+          <button className="dropdown-item" onClick={() => { cutElement(contextMenu.elementId); setContextMenu({ visible: false, x: 0, y: 0, elementId: null }); }}>Cut	Ctrl+X</button>
+          <button className="dropdown-item" onClick={() => { pasteElement(); setContextMenu({ visible: false, x: 0, y: 0, elementId: null }); }}>Paste	Ctrl+V</button>
+          <button className="dropdown-item" onClick={() => { duplicateElement(contextMenu.elementId); setContextMenu({ visible: false, x: 0, y: 0, elementId: null }); }}>Duplicate</button>
+          <button className="dropdown-item text-red-500" onClick={() => { if (confirm('Delete element?')) deleteElement(contextMenu.elementId); setContextMenu({ visible: false, x: 0, y: 0, elementId: null }); }}>Delete</button>
         </div>
       )}
     </div>

@@ -72,7 +72,12 @@ const Login = () => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full btn-primary py-3 disabled:opacity-50"
+              className="w-full py-3 disabled:opacity-50 font-semibold"
+              style={{
+                background: 'linear-gradient(90deg, var(--accent-gold), var(--gold-hover))',
+                color: '#111',
+                borderRadius: 8
+              }}
             >
               {loading ? 'Signing In...' : 'Sign In'}
             </button>
