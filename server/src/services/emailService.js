@@ -1,9 +1,14 @@
 import nodemailer from 'nodemailer';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 class EmailService {
-  constructor() {
-    this.transporter = nodemailer.createTransport({
-      service: 'gmail',
+  getTransporter() {
+    return nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false,
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
@@ -73,7 +78,8 @@ class EmailService {
     };
 
     try {
-      const info = await this.transporter.sendMail(mailOptions);
+      const transporter = this.getTransporter();
+      const info = await transporter.sendMail(mailOptions);
       console.log('OTP email sent:', info.messageId);
       return { success: true, messageId: info.messageId };
     } catch (error) {
@@ -135,7 +141,8 @@ class EmailService {
     };
 
     try {
-      const info = await this.transporter.sendMail(mailOptions);
+      const transporter = this.getTransporter();
+      const info = await transporter.sendMail(mailOptions);
       console.log('Confirmation email sent:', info.messageId);
       return { success: true, messageId: info.messageId };
     } catch (error) {
